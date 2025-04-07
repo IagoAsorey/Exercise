@@ -77,7 +77,7 @@ class RSASystemApp:
         self.q_entry = ttk.Entry(frame)
         self.q_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
         
-        ttk.Label(frame, text="Plaintext (number):").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        ttk.Label(frame, text="Plaintext:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
         self.x_entry = ttk.Entry(frame)
         self.x_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
         
@@ -93,7 +93,7 @@ class RSASystemApp:
         frame.columnconfigure(1, weight=1)
         self.n = self.phi = self.e = self.d = self.y = None
 
-    # Calcula parámetrs necesarior para el cifrado
+    # Calcula parámetros necesarios para el cifrado
     def compute_parameters(self):
         try:
             p, q = int(self.p_entry.get()), int(self.q_entry.get())
@@ -115,17 +115,9 @@ class RSASystemApp:
 
         # Encuentra e coprimo con phi
         self.e = next(e for e in range(3, self.phi, 2) if math.gcd(e, self.phi) == 1)
-        self.d = pow(self.e, -1, self.phi)  # Calcula el inverso modular directamente
+        self.d = pow(self.e, -1, self.phi)      # Calcula el inverso modular directamente
         return True
 
-    # Algoritmo de Euclides para el encontrar el inverso modular
-    def extended_gcd(self, a, b):
-        x0, x1, y0, y1 = 1, 0, 0, 1
-        while b:
-            q, a, b = a // b, b, a % b
-            x0, x1 = x1, x0 - q * x1
-            y0, y1 = y1, y0 - q * y1
-        return a, x0, y0
 
     # Encripta sin usar libreria
     def encrypt_system2(self):
@@ -135,7 +127,7 @@ class RSASystemApp:
         
         plaintext = self.x_entry.get()
         try:
-            ascii_values = [ord(c) for c in plaintext]      # Convertir texto a valores numéricos
+            ascii_values = [ord(c) for c in plaintext]      # Convertir texto a valores ASCII
             if any(val >= self.n for val in ascii_values):  # Verificar que todos los valores sean menores que n
                 raise ValueError("Error")
                 
