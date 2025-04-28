@@ -1,8 +1,4 @@
-import socket
-import json
-import base64
-import os
-import time
+import socket, json, base64, os, time
 
 import main
 
@@ -73,4 +69,4 @@ def forward(data):
         s.connect((host, port))
         s.sendall(json_data.encode('utf-8'))
         with main.print_lock:
-            print("\nData forwarded to Application 3 (Verifier).")
+            print("\nData sent to Application 3 (Verifier).")

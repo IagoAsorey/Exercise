@@ -1,7 +1,4 @@
-import socket
-import json
-import base64
-import os
+import socket, json, base64, os
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 

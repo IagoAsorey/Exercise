@@ -1,9 +1,6 @@
-import threading
-import time
+import threading, time
 
-import app1
-import app2
-import app3
+import app1, app2, app3
 
 print_lock = threading.Lock()   # Lock para impresiones sincronizadas
 
