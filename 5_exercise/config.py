@@ -1,0 +1,5 @@
+DATA_FILE = "Users/{username}_data.enc"
+CREDENTIALS_FILE = "Users/users.csv"
+ENTRY_AES_KEY = "6zfBeeVzfXBre5C4lIIeUWw1Ti5ON8OERcGSBIEAoDw"
+USERS_SIZE = 16
+KDF_ITERATIONS = 100_000

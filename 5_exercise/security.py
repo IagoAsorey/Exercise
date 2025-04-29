@@ -1,50 +1,37 @@
-import base64, csv
+import base64, os
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
-from cryptography.fernet import Fernet
 from cryptography.hazmat.backends import default_backend
-from user_manag import CREDENTIALS_FILE, KDF_ITERATIONS
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from config import KDF_ITERATIONS, ENTRY_AES_KEY
 
-# Inicializa el cifrado Fernet con la contraseña maestra
-def initialize_encryption(username: str, master_password: str) -> Fernet:
-    try:
-        with open(CREDENTIALS_FILE, 'r', newline='', encoding='utf-8') as file:
-            user_data = next(
-                (row for row in csv.DictReader(file) if row['username'] == username),
-                None
-            )
-            
-        if not user_data:
-            raise ValueError("User not registered")
-            
-        salt = base64.urlsafe_b64decode(user_data['salt'])
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=salt,
-            iterations=KDF_ITERATIONS,
-            backend=default_backend()
-        )
-        
-        derived_key = kdf.derive(master_password.encode())
-        fernet_key = base64.urlsafe_b64encode(derived_key)
-        return Fernet(fernet_key)
-        
-    except (FileNotFoundError, KeyError) as e:
-        raise ValueError("Error in the credentials file") from e
+# Decodifica la clave AES desde Base64 y valida su longitud
+def get_AES_key(entry_key: str) -> AESGCM:
+    key = base64.urlsafe_b64decode(entry_key + '=' * (-len(entry_key) % 4))
+    if len(key) not in (16, 24, 32):
+        raise ValueError("Decoded AES key must be 128, 192, or 256 bits.")
+    return AESGCM(key)
+aesgcm = get_AES_key(ENTRY_AES_KEY)
 
 # Cifra los datos proporcionados
-def encrypt_data(fernet: Fernet, data: bytes) -> bytes:
-    try:
-        return fernet.encrypt(data)
-    except Exception as e:
-        print(f"Encryption error: {str(e)}")
-        return None
+def encrypt_data(data: bytes, associated_data: bytes = None) -> bytes:
+    nonce = os.urandom(12)
+    encrypted = aesgcm.encrypt(nonce, data, associated_data)
+    return base64.urlsafe_b64encode(nonce + encrypted)
 
 # Descifra los datos proporcionados
-def decrypt_data(fernet: Fernet, data: bytes) -> bytes:
-    try:
-        return fernet.decrypt(data)
-    except Exception as e:
-        print(f"Decryption error: {str(e)}")
-        return None
+def decrypt_data(token: bytes, associated_data: bytes = None) -> bytes:
+    raw = base64.urlsafe_b64decode(token)
+    nonce, encrypted = raw[:12], raw[12:]
+    return aesgcm.decrypt(nonce, encrypted, associated_data)
+
+# Deriva una clave a partir de la contraseña y la sal
+def derive_key(password: str, salt: bytes) -> bytes:
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=KDF_ITERATIONS,
+        backend=default_backend()
+    )
+    return kdf.derive(password.encode())

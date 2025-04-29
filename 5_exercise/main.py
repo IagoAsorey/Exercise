@@ -1,296 +1,285 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
-import random, string
-import user_manag, security, storage
+from tkinter import ttk, messagebox
+import security, storage
 
-# Variables globales
+# Configuración de estilo y constantes
+BASE_FONT = ("Arial", 12)
+BTN_FONT = ("Arial", 10)
+TITLE_FONT = ("Arial", 16, "bold")
+PAD = 5
+# Variables de estado
 root = tk.Tk()
 root.title("Secure Password Manager")
-# Estados de la aplicación
-current_user = None
-fernet = None
-entries = []
-selected_index = None
-# Variables de control
+current_user, entries, selected_index = None, [], None
 search_var = tk.StringVar()
-url_var = tk.StringVar()
-notes_var = tk.StringVar()
-password_var = tk.StringVar(value='************')
 show_password = tk.BooleanVar(value=False)
 
-# Interfaz inicial de login/registro
-def start():
-    clear_window()
+# Ventana inicial de bienvenida
+def start_view():
+    setup_clear_window()
+    root.geometry("800x400")
+    frame = ttk.Frame(root, padding=20)
+    frame.pack(fill='both', expand=True)
+    ttk.Label(frame, text="Welcome", font=TITLE_FONT).pack(pady=10)
+    ttk.Button(frame, text="Login", width=20, command=lambda: auth_modal(True)).pack(pady=PAD)
+    ttk.Button(frame, text="Register", width=20, command=lambda: auth_modal(False)).pack(pady=PAD)
 
-    # Estilo general
-    style = ttk.Style()
-    style.configure("TLabel", font=("Arial", 12))
-    style.configure("TButton", font=("Arial", 10))
+# Modal genérico de autenticación (login o registro)
+def auth_modal(login=True):
+    import user_manager
+    title, auth_func = ("Login", user_manager.authenticate_user) if login else ("Register", user_manager.register_user)
+    win = tk.Toplevel(root)
+    win.title(title)
+    center_window(win, width=350, height=125)
+    win.transient(root)
+    win.grab_set()
 
-    # Título principal
-    title_frame = ttk.Frame(root, padding=20)
-    title_frame.pack(fill='x', pady=10)
-    ttk.Label(title_frame, text="Welcome", font=("Arial", 16, "bold")).pack()
+    container = ttk.Frame(win, padding=10)
+    container.pack(fill='both', expand=True)
+    user_var, pass_var = tk.StringVar(), tk.StringVar()
+    labeled_entry(container, "Username:", user_var, row=0)
+    labeled_entry(container, "Password:", pass_var, row=1, show='*')
 
-    # Opciones de Login y Registro
-    button_frame = ttk.Frame(root, padding=20)
-    button_frame.pack(fill='both', expand=True, pady=20)
-    ttk.Button(button_frame, text="Login", width=20, command=login).pack(pady=10)
-    ttk.Button(button_frame, text="Register", width=20, command=register).pack(pady=10)
+    def submit():
+        u, p = user_var.get().strip(), pass_var.get().strip()
+        if not u or not p:
+            messagebox.showerror("Error", "Both fields are required.")
+            return
+        try:
+            if auth_func(u, p):
+                win.destroy()
+                initialize_user_session(u)
+            else:
+                messagebox.showerror("Error", "Invalid credentials.")
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
 
-# Interfaz principal
-def main():
-    clear_window()
+    ttk.Button(container, text="Submit", command=submit).grid(row=2, column=0, columnspan=2, pady=(PAD, 0))
+    win.wait_window()
 
-    # Estilo general
-    style = ttk.Style()
-    style.configure("TLabel", font=("Arial", 12))
-    style.configure("TButton", font=("Arial", 10))
-    style.configure("Treeview.Heading", font=("Arial", 11, "bold"))
+# Inicialización de sesión y carga de datos
+def initialize_user_session(username):
+    global current_user, entries
+    try:
+        current_user = username
+        entries = storage.load_entries(username)
+        main_view()
+    except Exception as e:
+        messagebox.showerror("Error", f"Session init failed: {e}")
+        start_view()
 
-    # Título principal
-    title_frame = ttk.Frame(root, padding=10)
-    title_frame.pack(fill='x')
-    ttk.Label(title_frame, text="Password Manager", font=("Arial", 16, "bold")).pack()
+# Cerrar sesión
+def logout():
+    if current_user and messagebox.askyesno("Logout", "Are you sure?"):
+        try:
+            storage.save_entries(current_user, entries)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save data: {str(e)}")
+    root.destroy()
 
-    # Barra de búsqueda
-    search_frame = ttk.Frame(root, padding=10)
-    search_frame.pack(fill='x', padx=10, pady=5)
-    ttk.Label(search_frame, text="Search Title:").pack(side='left', padx=5)
-    ttk.Entry(search_frame, textvariable=search_var, width=100).pack(side='left', padx=5)
-    ttk.Button(search_frame, text="Search", command=search_entry).pack(side='left', padx=5)
+# Vista principal con Treeview y acciones
+def main_view():
+    setup_clear_window()
+    ttk.Label(root, text="Password Manager", font=TITLE_FONT).pack(pady=10)
+    
+    # Búsqueda
+    sf = ttk.Frame(root, padding=PAD)
+    sf.pack(fill='x')
+    ttk.Label(sf, text="Search Title:", font=BASE_FONT).grid(row=0, column=0, padx=(0, PAD), pady=PAD, sticky='w')
+    ttk.Entry(sf, textvariable=search_var).grid(row=0, column=1, padx=(0, PAD), pady=PAD, sticky='ew')
+    ttk.Button(sf, text="Search", command=search_entry).grid(row=0, column=2, padx=(0, PAD), pady=PAD, sticky='e')
+    sf.columnconfigure(1, weight=1)
 
-    # Lista de entradas
+    # Treeview
     global tree
-    tree_frame = ttk.Frame(root, padding=10)
-    tree_frame.pack(fill='both', expand=True, padx=10, pady=5)
-    tree = ttk.Treeview(tree_frame, columns=('Title', 'Password', 'URL', 'Notes'), show='headings', height=15)
-    for col in ('Title', 'Password', 'URL', 'Notes'):
-        tree.heading(col, text=col)
-        tree.column(col, width=150, anchor='center')
-    tree.pack(fill='both', expand=True, padx=5, pady=5)
+    cols = ('Title', 'Password', 'URL', 'Notes')
+    tree = ttk.Treeview(root, columns=cols, show='headings', height=10)
+    for c in cols:
+        tree.heading(c, text=c)
+        tree.column(c, anchor='center')
+    tree.pack(fill='both', expand=True, padx=10, pady=10)
     tree.bind('<<TreeviewSelect>>', on_select)
 
-    # Botones de acción
-    button_frame = ttk.Frame(root, padding=10)
-    button_frame.pack(fill='x', padx=10, pady=5)
-    buttons = [
-        ('Add Entry', add_entry),
-        ('Delete Entry', delete_entry),
-        ('Update Password', update_entry),
-        ('Show Password', toggle_password),
-        ('Copy Password', copy_password),
-        ('Logout', logout)
+    # Botones
+    bf = ttk.Frame(root, padding=5)
+    bf.pack(fill='x')
+    actions = [
+        ("Add Entry", lambda: entry_modal(False)),
+        ("Delete Entry", delete_entry),
+        ("Update Entry", lambda: entry_modal(True)),
+        ("Show Password", toggle_password),
+        ("Copy Password", copy_password),
+        ("Logout", logout)
     ]
-    for text, cmd in buttons:
-        ttk.Button(button_frame, text=text, command=cmd).pack(side='left', padx=5)
-
-    # Refrescar la lista de entradas
+    for i, (text, cmd) in enumerate(actions):
+        btn = ttk.Button(bf, text=text, command=cmd)
+        btn.grid(row=0, column=i, sticky='ew', padx=PAD, pady=PAD)
+        bf.columnconfigure(i, weight=1)
     refresh_list()
 
-# Registra un nuevo usuario
-def register():
-    username = simpledialog.askstring("Register", "Enter a new username:")
-    if not username:
-        messagebox.showerror("Error", "Username is required.")
+# Agregar/actualizar entrada
+def entry_modal(update=False):
+    global selected_index
+    if update and selected_index is None:
         return
-    
-    pwd = simpledialog.askstring("Register", "Enter a password:", show='*')
-    if not pwd:
-        messagebox.showerror("Error", "Password is required.")
-        return
-    
+
+    data = entries[selected_index] if update else {}
+    win = tk.Toplevel(root)
+    win.title("Update Entry" if update else "Add Entry")
+    center_window(win, width=400, height=250)
+    win.transient(root)
+    win.grab_set()
+
+    container = ttk.Frame(win, padding=10)
+    container.pack(fill='both', expand=True)
+
+    # Descifrar la contraseña previa si es una actualización
+    previous_password = ""
+    if update:
+        try:
+            previous_password = security.decrypt_data(data['EncryptedPassword'].encode()).decode()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to decrypt password: {str(e)}")
+            win.destroy()
+            return
+
+    vars_map = {
+        'Title': tk.StringVar(value=data.get('Title', '')),
+        'URL': tk.StringVar(value=data.get('URL', '')),
+        'Notes': tk.StringVar(value=data.get('Notes', '')),
+        'Password': tk.StringVar(value=previous_password)
+    }
+
+    def toggle_password_visibility():
+        if show_password.get():
+            password_entry.config(show='*')
+            show_password.set(False)
+        else:
+            password_entry.config(show='')
+            show_password.set(True)
+
+    # Campos de entrada
+    labeled_entry(container, "Title:", vars_map['Title'], row=0)
+    password_entry = labeled_entry(container, "Password:", vars_map['Password'], row=1, show='*')
+    global show_password
+    ttk.Button(container, text="Random password", command=lambda v=vars_map['Password']: v.set(random_password())).grid(row=2, column=1, pady=(PAD, 0))
+    ttk.Button(container, text="Show password", command=toggle_password_visibility).grid(row=3, column=1, pady=(PAD, 0))
+    labeled_entry(container, "URL:", vars_map['URL'], row=4)
+    labeled_entry(container, "Notes:", vars_map['Notes'], row=5)
+
+    # Botón de envío
+    def submit():
+        t, pw = vars_map['Title'].get().strip(), vars_map['Password'].get().strip()
+        if not t or not pw:
+            messagebox.showerror("Error", "Title and Password are required.")
+            return
+        
+        try:
+            new_data = {
+                'Title': t,
+                'EncryptedPassword': security.encrypt_data(pw.encode()).decode(),
+                'URL': vars_map['URL'].get(),
+                'Notes': vars_map['Notes'].get()
+            }
+            if update:
+                entries[selected_index].update(new_data)
+            else:
+                entries.append(new_data)
+            refresh_list()
+            win.destroy()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save entry: {str(e)}")
+
+    ttk.Button(container, text="Submit", command=submit).grid(row=6, column=0, columnspan=2, pady=(PAD, 0))
+
+# Eliminar entrada
+def delete_entry():
+    global selected_index
+    if selected_index is not None and messagebox.askyesno("Confirm", "Delete this entry?"):
+        del entries[selected_index]
+        selected_index = None
+        refresh_list()
+
+# Mostrar/ocultar contraseña
+def toggle_password():
+    if selected_index is None: return
+    e = entries[selected_index]
+    display = '************' if show_password.get() else security.decrypt_data(e['EncryptedPassword'].encode()).decode()
+    show_password.set(not show_password.get())
+    tree.item(tree.selection()[0], values=(e['Title'], display, e['URL'], e['Notes']))
+
+# Copiar contraseña al portapapeles
+def copy_password():
+    if selected_index is None: return
     try:
-        user_manag.register_user(username, pwd)
-        initialize_user_session(username, pwd)
-        messagebox.showinfo("Success", "Registration successful.")
+        pw = security.decrypt_data(entries[selected_index]['EncryptedPassword'].encode()).decode()
+        root.clipboard_clear()
+        root.clipboard_append(pw)
     except Exception as e:
         messagebox.showerror("Error", str(e))
 
-# Inicia sesión de usuario
-def login():
-    username = simpledialog.askstring("Login", "Enter your username:")
-    if not username:
-        messagebox.showerror("Error", "Username is required.")
-        return
-    
-    pwd = simpledialog.askstring("Login", "Enter your password:", show='*')
-    if not pwd:
-        messagebox.showerror("Error", "Password is required.")
-        return
-    
-    if user_manag.authenticate_user(username, pwd):
-        initialize_user_session(username, pwd)
-    else:
-        messagebox.showerror("Error", "Invalid username or password.")
-
-# Inicializa la sesión del usuario
-def initialize_user_session(username, password):
-    global current_user, fernet, entries
-    try:
-        current_user = username
-        fernet = security.initialize_encryption(username, password)
-        entries = storage.load_entries(fernet, username)
-        main()
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to initialize session: {str(e)}")
-        logout()
-
-# Cierra sesión de usuario y la aplicación
-def logout():
-    try:
-        if not messagebox.askyesno("Log out", "Are you sure you want to log out?"):
-            return
-        
-        if current_user and fernet:
-            storage.save_entries(fernet, current_user, entries)
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to save data: {e}")
-    finally:
-        root.destroy()
-
-# Busca una entrada por título
+# Otras funciones
 def search_entry():
     title = search_var.get().strip().lower()
-    for idx, entry in enumerate(entries):
-        if entry['Title'].lower() == title:
+    for idx, e in enumerate(entries):
+        if e['Title'].lower() == title:
             tree.selection_set(tree.get_children()[idx])
             on_select()
             return
     messagebox.showinfo("Not found", "No entry with that title.")
 
-# Agrega una nueva entrada
-def add_entry():
-    title = simpledialog.askstring("Title", "Enter a title:")
-    if not title:
-        return messagebox.showerror("Error", "Title is required.")
-    
-    password = select_password()
-    if not password:
-        return messagebox.showerror("Error", "Password is required.")
-    
-    new_entry = {
-        'Title': title,
-        'EncryptedPassword': security.encrypt_data(fernet, password.encode()).decode(),
-        'URL': simpledialog.askstring("URL/App", "Enter a URL or app name:") or '',
-        'Notes': simpledialog.askstring("Notes", "Enter notes:") or ''
-    }
-    entries.append(new_entry)
-    refresh_list()
+# Genera contraseña aleatoria
+def random_password():
+    import random, string, secrets
+    mandatory = [
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.digits),
+        secrets.choice(string.punctuation),
+    ]
+    # Resto de caracteres aleatorios
+    alphabet = string.ascii_letters + string.digits + string.punctuation
+    rest = [secrets.choice(alphabet) for _ in range(12)]
+    # Mezclar y devolver
+    password_chars = mandatory + rest
+    random.SystemRandom().shuffle(password_chars)
+    return ''.join(password_chars)
 
-# Elimina una entrada seleccionada
-def delete_entry():
-    global selected_index
-    if selected_index is None:
-        return
-    
-    if not messagebox.askyesno("Confirm", "Are you sure you want to delete this entry?"):
-        return
-    
-    del entries[selected_index]
-    selected_index = None  # Reinicia el índice seleccionado
-    refresh_list()
-
-# Actualiza una entrada existente
-def update_entry():
-    if selected_index is None:
-        return
-    
-    entry = entries[selected_index]
-    entry.update({
-        'URL': url_var.get() or entry['URL'],
-        'Notes': notes_var.get() or entry['Notes']
-    })
-
-    if messagebox.askyesno("Update", "Do you want to change the password?") and (new_password := select_password()):
-        entry['EncryptedPassword'] = security.encrypt_data(fernet, new_password.encode()).decode()
-    
-    refresh_list()
-
-# Muestra u oculta la contraseña de la entrada seleccionada
-def toggle_password():
-    if selected_index is None:
-        return
-
-    entry = entries[selected_index]
-    if show_password.get():
-        password_var.set('************')
-    else:
-        decrypted = security.decrypt_data(fernet, entry['EncryptedPassword'].encode())
-        password_var.set(decrypted.decode())
-
-    show_password.set(not show_password.get())
-    tree.item(tree.selection()[0], values=(
-        entry['Title'], 
-        password_var.get(), 
-        entry['URL'], 
-        entry['Notes']
-    ))
-
-# Copia la contraseña de la entrada seleccionada al port
-def copy_password():
-    if selected_index is None:
-        return
-    
-    try:
-        decrypted = security.decrypt_data(fernet, entries[selected_index]['EncryptedPassword'].encode())
-        root.clipboard_clear()
-        root.clipboard_append(decrypted.decode())
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to copy password: {str(e)}")
-
-# Genera una contraseña aleatoria o permite ingresarla manualmente
-def select_password() -> str:
-    choose_passw = tk.Toplevel(root)
-    choose_passw.title("Password")
-    choose_passw.geometry("300x150")
-    password = [None]
-
-    # Genera una contraseña aleatoria
-    def on_generate():
-        chars = [
-            random.choice(string.ascii_lowercase),
-            random.choice(string.ascii_uppercase),
-            random.choice(string.digits),
-            random.choice(string.punctuation)
-        ] + random.choices(string.ascii_letters + string.digits + string.punctuation, k=4)
-        random.shuffle(chars)
-        password[0] = ''.join(chars)
-        choose_passw.destroy()
-
-    ttk.Label(choose_passw, text="Choose password method:").pack(pady=10)
-    ttk.Button(choose_passw, text="Generate Random", command=on_generate).pack(fill='x', padx=20, pady=5)
-    ttk.Button(choose_passw, text="Enter manually", command=lambda: [choose_passw.destroy(), password.__setitem__(0, simpledialog.askstring("Password", "Enter password:", show='*'))]).pack(fill='x', padx=20)
-
-    # Centrar la ventana y esperar a que se cierre
-    choose_passw.transient(root)
-    choose_passw.grab_set()
-    choose_passw.wait_window()
-
-    return password[0] or ""
-
-# Actualiza la lista de entradas en el Treeview
+# Refresca la lista de entradas
 def refresh_list():
     tree.delete(*tree.get_children())
-    for entry in entries:
-        tree.insert('', 'end', values=(entry['Title'], '************', entry['URL'], entry['Notes']))
+    for e in entries:
+        tree.insert('', 'end', values=(e['Title'], '************', e['URL'], e['Notes']))
 
-# Limpia la ventana
-def clear_window():
-    for w in root.winfo_children():
-        w.destroy()
-
-# Maneja la selección de una entrada en el Treeview
+# Selección de entrada en el Treeview
 def on_select(event=None):
     global selected_index
     sel = tree.selection()
     selected_index = tree.index(sel[0]) if sel else None
 
-    if selected_index is not None:
-        entry = entries[selected_index]
-        url_var.set(entry['URL'])
-        notes_var.set(entry['Notes'])
+# Limpia la ventana actual y prepara el estilo
+def setup_clear_window():
+    for widget in root.winfo_children(): widget.destroy()
+    style = ttk.Style()
+    style.configure("TLabel", font=BASE_FONT)
+    style.configure("TButton", font=BTN_FONT)
+    style.configure("Treeview.Heading", font=(BASE_FONT[0], BASE_FONT[1], "bold"))
+
+# Función común para centrar ventanas
+def center_window(window, width=400, height=300):
+    x = (window.winfo_screenwidth() - width) // 2
+    y = (window.winfo_screenheight() - height) // 2
+    window.geometry(f"{width}x{height}+{x}+{y}")
+
+# Helper para crear fila de formulario con grid
+def labeled_entry(parent, label_text, text_var, row, show=None):
+    ttk.Label(parent, text=label_text).grid(row=row, column=0, sticky='w', padx=PAD, pady=PAD)
+    entry = ttk.Entry(parent, textvariable=text_var, show=show)
+    entry.grid(row=row, column=1, sticky='ew', padx=PAD, pady=PAD)
+    parent.columnconfigure(1, weight=1)
+    return entry
 
 if __name__ == '__main__':
-    start()
+    root.protocol("WM_DELETE_WINDOW", logout)
+    start_view()
     root.mainloop()
